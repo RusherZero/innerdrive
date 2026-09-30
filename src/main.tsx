@@ -475,7 +475,7 @@ function App() {
                     <p className="chart-description">
                       {section === "motivation"
                         ? "Your relative preference for each workplace drive."
-                        : "Your reactions to the behaviours described in the questions."}
+                        : "Your reactions to the behaviours described in the questions. Higher scores highlight needs whose absence you found more draining in the situations described. For example, a high Structure score points to frustration with unclear or unreliable ways of working."}
                     </p>
                     <div className="bar-chart">
                       {driveIds.map((id) => (
