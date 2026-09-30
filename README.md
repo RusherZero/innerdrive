@@ -13,6 +13,8 @@ pnpm dev
 
 Open the local URL Vite prints. `pnpm build` type-checks and creates `dist/`; `pnpm preview` serves that production build. `pnpm test` runs scoring, content integrity, and saved-data validation tests.
 
+GitHub Pages publishes through `.github/workflows/deploy-pages.yml` on pushes to `main`. The workflow runs `pnpm run build:pages`, which builds assets under `/innerdrive/`, then deploys `dist/`. Keep the Pages source set to **GitHub Actions**. The ordinary `pnpm build` retains root-relative assets for other hosts.
+
 ## Behaviour
 
 12 original statements cover six workplace situations twice: motivation and frustration. Each statement has one response per drive. Allocate exactly 12 whole points, with zero and all 12 on one response allowed. Each section totals 72 points. Results show each drive's percentage independently in both sections; ties remain ties. Explanations are authored, deterministic reflection prompts, not AI-generated judgements.
