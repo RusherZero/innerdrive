@@ -1,48 +1,80 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { drives, driveIds, questions, type Section } from "./data";
+import {
+  assessments,
+  driveIds,
+  type AssessmentId,
+  type EnergySituation,
+  type Section,
+} from "./data";
 import {
   complete,
   leaders,
   restore,
   score,
-  storageKey,
   total,
   valid,
   type Saved,
 } from "./model";
 import "./styles.css";
-const initial = restore();
+const initial = {
+  workplace: restore(assessments.workplace),
+  personal: restore(assessments.personal),
+};
+const assessmentIds: AssessmentId[] = ["workplace", "personal"];
+const situationLabels: Record<EnergySituation, string> = {
+  busy: "Busy days",
+  change: "Unexpected changes",
+  social: "Social situations",
+};
 type View = "intro" | "question" | "review" | "results";
 function App() {
-  const [saved, setSaved] = useState<Saved>(initial.saved);
-  const [notice, setNotice] = useState(initial.notice);
-  const [view, setView] = useState<View>(
-    initial.saved.completed ? "results" : "intro",
-  );
+  const [mode, setMode] = useState<AssessmentId>("workplace");
+  const [profiles, setProfiles] = useState({
+    workplace: initial.workplace.saved,
+    personal: initial.personal.saved,
+  });
+  const [notices, setNotices] = useState({
+    workplace: initial.workplace.notice,
+    personal: initial.personal.notice,
+  });
+  const [storageStates, setStorageStates] = useState({
+    workplace: !initial.workplace.notice,
+    personal: !initial.personal.notice,
+  });
+  const [view, setView] = useState<View>("intro");
   const [confirmReset, setConfirmReset] = useState(false);
-  const [storageOk, setStorageOk] = useState(!initial.notice);
   const [editing, setEditing] = useState(false);
+  const assessment = assessments[mode];
+  const { questions, drives } = assessment;
+  const saved = profiles[mode];
+  const notice = notices[mode];
+  const storageOk = storageStates[mode];
+  function setNotice(value: string) {
+    setNotices((previous) => ({ ...previous, [mode]: value }));
+  }
+  function setSaved(value: Saved) {
+    setProfiles((previous) => ({ ...previous, [mode]: value }));
+    if (!Object.keys(value.answers).length) return;
+    try {
+      localStorage.setItem(assessment.storageKey, JSON.stringify(value));
+      setStorageStates((previous) => ({ ...previous, [mode]: true }));
+      setNotice("");
+    } catch {
+      setStorageStates((previous) => ({ ...previous, [mode]: false }));
+      setNotice(
+        "Browser storage is unavailable. You can continue, but progress will not be saved.",
+      );
+    }
+  }
   const q = questions[saved.index];
   const answered = questions.filter((question) =>
     valid(question, saved.answers),
   ).length;
   useEffect(() => {
-    if (!Object.keys(saved.answers).length) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(saved));
-      setStorageOk(true);
-    } catch {
-      setStorageOk(false);
-      setNotice(
-        "Browser storage is unavailable. You can continue, but progress will not be saved.",
-      );
-    }
-  }, [saved]);
-  useEffect(() => {
     window.scrollTo(0, 0);
     document.querySelector<HTMLElement>("h1")?.focus();
-  }, [view, saved.index]);
+  }, [view, view === "question" ? saved.index : null]);
   function allocate(id: string, value: number) {
     const old = saved.answers[q.id]?.[id] ?? 0;
     const next = Math.max(
@@ -60,9 +92,11 @@ function App() {
   }
   function reset() {
     try {
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem(assessment.storageKey);
+      setStorageStates((previous) => ({ ...previous, [mode]: true }));
       setNotice("");
     } catch {
+      setStorageStates((previous) => ({ ...previous, [mode]: false }));
       setNotice(
         "Saved browser data could not be removed. Clear this site’s data in your browser settings.",
       );
@@ -73,7 +107,7 @@ function App() {
     setEditing(false);
   }
   function results() {
-    if (complete(saved.answers)) {
+    if (complete(saved.answers, assessment)) {
       setSaved({ ...saved, completed: true });
       setView("results");
       setEditing(false);
@@ -96,7 +130,9 @@ function App() {
         <span className="header-caption">
           A little reflection. A clearer perspective.
         </span>
-        <span className="edition">THE WORKPLACE REFLECTION</span>
+        <span className="edition">
+          {assessment.label.toUpperCase()} REFLECTION
+        </span>
       </header>
       {notice && (
         <div className="notice" role="status">
@@ -115,10 +151,51 @@ function App() {
                 <br />
                 moves <em>you.</em>
               </h1>
-              <p className="lead">
-                The way you lead, collaborate, and make decisions starts with
-                what drives you. Take a moment to discover your own pattern.
-              </p>
+              <p className="lead">{assessment.lead}</p>
+              <fieldset className="assessment-selector">
+                <legend>Choose your reflection</legend>
+                <div className="assessment-options">
+                  {assessmentIds.map((id) => {
+                    const option = assessments[id];
+                    const progress = option.questions.filter((question) =>
+                      valid(question, profiles[id].answers),
+                    ).length;
+                    return (
+                      <label
+                        key={id}
+                        className={`assessment-option ${mode === id ? "selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="assessment"
+                          value={id}
+                          checked={mode === id}
+                          onChange={() => {
+                            setMode(id);
+                            setEditing(false);
+                            setConfirmReset(false);
+                          }}
+                        />
+                        <span>
+                          <strong>{option.label}</strong>
+                          <small>
+                            {id === "workplace"
+                              ? "How you work, lead, and collaborate."
+                              : "Your routines, connections, and everyday energy."}
+                          </small>
+                          <span className="assessment-progress">
+                            {profiles[id].completed
+                              ? "Profile ready"
+                              : Object.keys(profiles[id].answers).length
+                                ? `${progress}/${option.questions.length} statements complete · In progress`
+                                : "Ready to begin"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
               <div className="intro-actions">
                 <button
                   className="primary"
@@ -134,7 +211,7 @@ function App() {
                   <span>↗</span>
                 </button>
                 <span className="time-note">
-                  12 statements · At your own pace
+                  {questions.length} statements · At your own pace
                 </span>
               </div>
               <div className="intro-details">
@@ -144,7 +221,7 @@ function App() {
                   <p>
                     Explore what energises
                     <br />
-                    and frustrates you at work.
+                    and frustrates you {assessment.context}.
                   </p>
                 </div>
                 <div>
@@ -162,7 +239,9 @@ function App() {
                   <p>
                     Get your profile and practical
                     <br />
-                    ideas to work with it.
+                    {mode === "personal"
+                      ? "ideas for your everyday life."
+                      : "ideas to work with it."}
                   </p>
                 </div>
               </div>
@@ -208,8 +287,8 @@ function App() {
                 <strong>A space for honest reflection.</strong> There are no
                 right or wrong answers. No account needed; your progress stays
                 in this browser. This original reflection tool is inspired by
-                six workplace drives. It is not the official Management Drives
-                assessment or a scientifically validated test.
+                six drives. It is not the official Management Drives assessment
+                or a scientifically validated test.
               </p>
             </section>
           </div>
@@ -229,7 +308,10 @@ function App() {
                 <span>01</span>
                 <div>
                   <strong>What energises you</strong>
-                  <small>Statements 1–6</small>
+                  <small>
+                    Statements 1–
+                    {questions.filter((q) => q.section === "motivation").length}
+                  </small>
                 </div>
               </div>
               <div
@@ -238,14 +320,19 @@ function App() {
                 <span>02</span>
                 <div>
                   <strong>What drains you</strong>
-                  <small>Statements 7–12</small>
+                  <small>
+                    Statements{" "}
+                    {questions.filter((q) => q.section === "motivation")
+                      .length + 1}
+                    –{questions.length}
+                  </small>
                 </div>
               </div>
               <div className="sidebar-help">
                 <span>↗</span>
                 <p>
-                  Think about how you usually feel at work, rather than how you
-                  think you should feel.
+                  Think about how you usually feel {assessment.context}, rather
+                  than how you think you should feel.
                 </p>
                 <p>
                   Give more points to responses that resonate. Zero is fine, and
@@ -263,14 +350,16 @@ function App() {
                 </span>
                 <span>
                   {String(saved.index + 1).padStart(2, "0")}{" "}
-                  <span className="muted">/ 12</span>
+                  <span className="muted">/ {questions.length}</span>
                 </span>
               </div>
               <div
                 className="progress-track"
-                aria-label={`${answered} of 12 statements completed`}
+                aria-label={`${answered} of ${questions.length} statements completed`}
               >
-                <div style={{ width: `${(answered / 12) * 100}%` }} />
+                <div
+                  style={{ width: `${(answered / questions.length) * 100}%` }}
+                />
               </div>
               <h1 tabIndex={-1}>{q.prompt}</h1>
               <div className="allocation-instruction">
@@ -352,14 +441,14 @@ function App() {
                   className="primary"
                   disabled={!valid(q, saved.answers)}
                   onClick={() =>
-                    editing || saved.index === 11
+                    editing || saved.index === questions.length - 1
                       ? setView("review")
                       : setSaved({ ...saved, index: saved.index + 1 })
                   }
                 >
                   {editing
                     ? "Back to review"
-                    : saved.index === 11
+                    : saved.index === questions.length - 1
                       ? "Review answers"
                       : "Next statement"}{" "}
                   <span>→</span>
@@ -420,18 +509,20 @@ function App() {
             </div>
             <button
               className="primary"
-              disabled={!complete(saved.answers)}
+              disabled={!complete(saved.answers, assessment)}
               onClick={results}
             >
               Reveal my profile <span>↗</span>
             </button>
           </section>
         )}
-        {view === "results" && complete(saved.answers) && (
+        {view === "results" && complete(saved.answers, assessment) && (
           <section className="results-page">
             <div className="result-heading">
               <div>
-                <p className="eyebrow">YOUR PERSONAL REFLECTION</p>
+                <p className="eyebrow">
+                  YOUR {assessment.label.toUpperCase()} REFLECTION
+                </p>
                 <h1 tabIndex={-1}>
                   A clearer picture
                   <br />
@@ -451,15 +542,23 @@ function App() {
                 >
                   Review your answers →
                 </button>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setView("intro");
+                    setEditing(false);
+                  }}
+                >
+                  Choose another reflection →
+                </button>
               </div>
             </div>
-            <p className="lead results-lead">
-              A starting point for understanding yourself, and a better
-              conversation with the people you work with.
-            </p>
+            <p className="lead results-lead">{assessment.resultsLead}</p>
             <div className="charts">
               {(["motivation", "frustration"] as Section[]).map((section) => {
-                const scores = score(saved.answers, section);
+                const scores = score(saved.answers, section, assessment);
+                const sectionTotal =
+                  questions.filter((q) => q.section === section).length * 12;
                 return (
                   <article className="chart-card" key={section}>
                     <p className="eyebrow">
@@ -474,8 +573,8 @@ function App() {
                     </h2>
                     <p className="chart-description">
                       {section === "motivation"
-                        ? "Your relative preference for each workplace drive."
-                        : "Your reactions to the behaviours described in the questions. Higher scores highlight needs whose absence you found more draining in the situations described. For example, a high Structure score points to frustration with unclear or unreliable ways of working."}
+                        ? `Your relative preference for each drive ${assessment.context}.`
+                        : `Your reactions to the situations described in the questions. Higher scores highlight needs whose absence you found more draining. For example, a high Structure score points to frustration with ${mode === "personal" ? "unclear or unreliable everyday arrangements" : "unclear or unreliable ways of working"}.`}
                     </p>
                     <div className="bar-chart">
                       {driveIds.map((id) => (
@@ -486,7 +585,7 @@ function App() {
                               {drives[id].name}
                             </span>
                             <strong>
-                              {((scores[id] / 72) * 100).toFixed(1)}
+                              {((scores[id] / sectionTotal) * 100).toFixed(1)}
                               <small>%</small>
                             </strong>
                           </div>
@@ -494,7 +593,7 @@ function App() {
                             <div
                               style={{
                                 background: drives[id].color,
-                                width: `${(scores[id] / 72) * 100}%`,
+                                width: `${(scores[id] / sectionTotal) * 100}%`,
                               }}
                             />
                           </div>
@@ -515,15 +614,23 @@ function App() {
               })}
             </div>
             <p className="score-explanation">
-              Each chart shows how you distributed 72 points in that section.
-              Percentages describe your own answers, not a comparison with other
-              people. Motivation and frustration are independent: the same drive
-              can appear strongly in both. Rounded percentages may not add up to
+              Each chart shows how you distributed{" "}
+              {questions.filter((q) => q.section === "motivation").length * 12}{" "}
+              motivation points and{" "}
+              {questions.filter((q) => q.section === "frustration").length * 12}{" "}
+              frustration points in their respective sections. Percentages
+              describe your own answers, not a comparison with other people.
+              Motivation and frustration are independent: the same drive can
+              appear strongly in both. Rounded percentages may not add up to
               exactly 100%.
             </p>
             <div className="insight-heading">
               <p className="eyebrow">TURN REFLECTION INTO ACTION</p>
-              <h2>Your drives, in everyday life.</h2>
+              <h2>
+                {mode === "personal"
+                  ? "Build routines around what energises you."
+                  : "Your drives, in everyday life."}
+              </h2>
               <p>
                 Start with your leading motivations, then explore the rest of
                 your profile.
@@ -533,8 +640,8 @@ function App() {
               {[...driveIds]
                 .sort(
                   (a, b) =>
-                    score(saved.answers, "motivation")[b] -
-                    score(saved.answers, "motivation")[a],
+                    score(saved.answers, "motivation", assessment)[b] -
+                    score(saved.answers, "motivation", assessment)[a],
                 )
                 .map((id) => (
                   <article
@@ -548,12 +655,13 @@ function App() {
                         style={{ background: drives[id].color }}
                       />
                       <h3>{drives[id].name}</h3>
-                      {leaders(score(saved.answers, "motivation")).includes(
-                        id,
-                      ) && (
+                      {leaders(
+                        score(saved.answers, "motivation", assessment),
+                      ).includes(id) && (
                         <span className="leading-label">
-                          {leaders(score(saved.answers, "motivation"))
-                            .length === 6
+                          {leaders(
+                            score(saved.answers, "motivation", assessment),
+                          ).length === 6
                             ? "Equal share"
                             : "Leading drive"}
                         </span>
@@ -564,15 +672,22 @@ function App() {
                     <p>{drives[id].strength}</p>
                     <h4>Something to watch</h4>
                     <p>{drives[id].blindSpot}</p>
+                    {assessment.guidance && (
+                      <>
+                        <h4>A routine to try</h4>
+                        <p>{assessment.guidance[id].routine}</p>
+                      </>
+                    )}
                     <h4>Try this with others</h4>
                     <p>{drives[id].tip}</p>
-                    {leaders(score(saved.answers, "frustration")).includes(
-                      id,
-                    ) && (
+                    {leaders(
+                      score(saved.answers, "frustration", assessment),
+                    ).includes(id) && (
                       <div className="friction-note">
                         <h4>
-                          {leaders(score(saved.answers, "frustration"))
-                            .length === 6
+                          {leaders(
+                            score(saved.answers, "frustration", assessment),
+                          ).length === 6
                             ? "A reflection on frustration"
                             : "A leading source of frustration"}
                         </h4>
@@ -582,21 +697,73 @@ function App() {
                   </article>
                 ))}
             </div>
+            {assessment.guidance && (
+              <section
+                className="situation-guidance"
+                aria-labelledby="situations-heading"
+              >
+                <div className="insight-heading">
+                  <p className="eyebrow">
+                    WHEN YOUR DAY NEEDS SOMETHING DIFFERENT
+                  </p>
+                  <h2 id="situations-heading">
+                    Support your energy in the moment.
+                  </h2>
+                  <p>
+                    {leaders(score(saved.answers, "frustration", assessment))
+                      .length === 6
+                      ? "Your drainers are evenly distributed. Explore these options and choose what fits the situation."
+                      : "These suggestions reflect your leading drainers. Try the ones that fit your circumstances."}
+                  </p>
+                </div>
+                <div className="insights">
+                  {(Object.keys(situationLabels) as EnergySituation[]).map(
+                    (situation) => (
+                      <article
+                        className="insight-card situation-card"
+                        key={situation}
+                      >
+                        <h3>{situationLabels[situation]}</h3>
+                        {leaders(
+                          score(saved.answers, "frustration", assessment),
+                        ).map((id) => (
+                          <div key={id}>
+                            <h4>{drives[id].name}</h4>
+                            <p>
+                              {assessment.guidance![id].situations[situation]}
+                            </p>
+                          </div>
+                        ))}
+                      </article>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
             <aside className="reflection-prompt">
               <span>↗</span>
               <div>
-                <h2>Make it a conversation.</h2>
+                <h2>
+                  {mode === "personal"
+                    ? "Start with one small adjustment."
+                    : "Make it a conversation."}
+                </h2>
                 <p>
-                  What feels familiar? What surprised you? Choose one insight
-                  and discuss a recent example with someone you trust.
+                  {mode === "personal"
+                    ? "Choose one routine idea that fits your life now. Try a small version, notice how it feels, and adjust it as your circumstances change."
+                    : "What feels familiar? What surprised you? Choose one insight and discuss a recent example with someone you trust."}
                 </p>
               </div>
             </aside>
             <p className="disclaimer">
-              This is an original reflection tool inspired by six workplace
-              drives, not the official Management Drives assessment or a
-              scientifically validated test. Treat the results as prompts for
-              discussion, not fixed labels or a basis for employment decisions.
+              This is an original reflection tool inspired by six drives, not
+              the official Management Drives assessment or a scientifically
+              validated test. Treat the results as prompts for reflection, not
+              fixed labels
+              {mode === "workplace"
+                ? " or a basis for employment decisions"
+                : " or prescriptions for how to live"}
+              .
             </p>
           </section>
         )}
@@ -613,7 +780,7 @@ function App() {
               className="text-button no-print"
               onClick={() => setConfirmReset(true)}
             >
-              Reset reflection
+              Reset {assessment.label.toLowerCase()} reflection
             </button>
           )}
         </div>
@@ -626,10 +793,13 @@ function App() {
             aria-modal="true"
             aria-labelledby="reset-title"
           >
-            <h2 id="reset-title">Start a new reflection?</h2>
+            <h2 id="reset-title">
+              Restart your {assessment.label.toLowerCase()} reflection?
+            </h2>
             <p>
-              This deletes your answers and profile from this browser. Print
-              your profile first if you want to keep it.
+              This deletes only your {assessment.label.toLowerCase()} answers
+              and profile from this browser. Your other reflection is kept.
+              Print your profile first if you want to keep it.
             </p>
             <div>
               <button
@@ -660,7 +830,7 @@ function App() {
                   }
                 }}
               >
-                Reset reflection
+                Reset {assessment.label.toLowerCase()} reflection
               </button>
             </div>
           </section>

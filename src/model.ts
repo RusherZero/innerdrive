@@ -1,6 +1,6 @@
 import {
   driveIds,
-  questions,
+  type Assessment,
   type DriveId,
   type Question,
   type Section,
@@ -12,7 +12,6 @@ export interface Saved {
   index: number;
   completed: boolean;
 }
-export const storageKey = "innerdrive-v1";
 export const total = (question: Question, answers: Answers) =>
   question.responses.reduce(
     (sum, r) => sum + (answers[question.id]?.[r.id] ?? 0),
@@ -23,19 +22,20 @@ export const valid = (question: Question, answers: Answers) =>
     const n = answers[question.id]?.[r.id] ?? 0;
     return Number.isInteger(n) && n >= 0 && n <= 12;
   }) && total(question, answers) === 12;
-export const complete = (answers: Answers) =>
-  questions.every((q) => valid(q, answers));
+export const complete = (answers: Answers, assessment: Assessment) =>
+  assessment.questions.every((q) => valid(q, answers));
 export function score(
   answers: Answers,
   section: Section,
+  assessment: Assessment,
 ): Record<DriveId, number> {
-  if (!complete(answers))
+  if (!complete(answers, assessment))
     throw new Error("Complete all allocations before scoring.");
   const sums = Object.fromEntries(driveIds.map((id) => [id, 0])) as Record<
     DriveId,
     number
   >;
-  questions
+  assessment.questions
     .filter((q) => q.section === section)
     .forEach((q) =>
       q.responses.forEach((r) => {
@@ -46,7 +46,8 @@ export function score(
 }
 export const leaders = (scores: Record<DriveId, number>) =>
   driveIds.filter((id) => scores[id] === Math.max(...Object.values(scores)));
-export function decode(raw: string): Saved {
+export function decode(raw: string, assessment: Assessment): Saved {
+  const { questions } = assessment;
   const data = JSON.parse(raw);
   if (
     !data ||
@@ -84,15 +85,18 @@ export function decode(raw: string): Saved {
     }
     if (total(question, answers) > 12) throw new Error("Invalid saved total");
   }
-  if (data.completed && !complete(answers))
+  if (data.completed && !complete(answers, assessment))
     throw new Error("Incomplete saved result");
   return { version: 1, answers, index: data.index, completed: data.completed };
 }
-export function restore(): { saved: Saved; notice: string } {
+export function restore(assessment: Assessment): {
+  saved: Saved;
+  notice: string;
+} {
   const empty: Saved = { version: 1, answers: {}, index: 0, completed: false };
   let raw: string | null;
   try {
-    raw = localStorage.getItem(storageKey);
+    raw = localStorage.getItem(assessment.storageKey);
   } catch {
     return {
       saved: empty,
@@ -102,7 +106,7 @@ export function restore(): { saved: Saved; notice: string } {
   }
   if (!raw) return { saved: empty, notice: "" };
   try {
-    return { saved: decode(raw), notice: "" };
+    return { saved: decode(raw, assessment), notice: "" };
   } catch {
     return {
       saved: empty,
